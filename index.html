@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>五寮尖山羊乳 - 原生高速列印工作台 v8.1</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- CP936 (GBK) 繁簡中文編碼庫：解決熱感應印表機文字亂碼問題 -->
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/cpexcel.js"></script>
+
+  <!-- Firebase v8 相容庫 -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <style>
+    /* 強制使用明體/宋體，還原熱感應印表機視覺感 */
+    body {
+      font-family: 'PMingLiU', 'MingLiU', 'TW-Sung', serif;
+      -webkit-tap-highlight-color: transparent;
+      background-color: #0f172a;
+      color: #f1f5f9;
+      padding-bottom: 80px; 
+    }
+    /* UI 介面部分保留黑體易讀性，預覽區才強制明體 */
+    .ui-sans { font-family: sans-serif; }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    
+    .custom-checkbox:checked + div {
+      background-color: #f59e0b;
+      border-color: #f59e0b;
+    }
+    .custom-checkbox:checked + div svg { display: block; }
+  </style>
+</head>
+<body class="selection:bg-indigo-500 selection:text-white ui-sans">
+
+  <!-- 頂部狀態列 -->
+  <header class="bg-slate-800/95 backdrop-blur border-b border-slate-700 p-3 sticky top-0 z-50 flex justify-between items-center shadow-md">
+    <div class="flex flex-col">
+      <h1 class="text-base font-bold text-white tracking-wider">五寮尖高速列印工作台</h1>
+      <span class="text-[10px] text-slate-400">目前分頁: <span id="currentTabLabel" class="text-amber-400 font-bold">作業與列表</span> | 編碼: CP936</span>
+    </div>
+    <div id="connStatus" class="flex items-center gap-2">
+      <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+        印表機未連線
+      </span>
+    </div>
+  </header>
+
+  <main class="p-4 max-w-2xl mx-auto space-y-4">
+    
+    <!-- ==================== 分頁一：作業與列表 (一站式整合) ==================== -->
+    <section id="tab-1" class="space-y-4 block">
+      
+      <!-- 1. 雲端試算表匯入 GOTx -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-slate-700">
+        <h2 class="text-sm font-semibold text-emerald-400 mb-2 flex items-center justify-between">
+          <span>串連試算表 (匯入 GOTx)</span>
+        </h2>
+        <div class="flex gap-2">
+          <input type="text" id="sheetUrl" value="https://docs.google.com/spreadsheets/d/1GwHutB8D7KeuN5QuehL8Dt_Ed3G6rYzOzBIGCeWG8pc/edit?usp=sharing" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-300 text-xs outline-none" readonly>
+          <button onclick="fetchGoogleSheetGOTx()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-white font-bold text-xs active:scale-95 transition-all shadow-md whitespace-nowrap">
+            匯入
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. 手動單筆登記 -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-slate-700">
+        <h2 class="text-sm font-semibold text-amber-400 mb-3 border-b border-slate-700 pb-2">
+          手動登入資訊 (同步 _xptre 與 hsty_hd)
+        </h2>
+
+        <!-- 取貨站點 -->
+        <div class="mb-4">
+          <label class="block text-xs text-slate-400 mb-2">取貨站點</label>
+          <div class="flex overflow-x-auto gap-2 pb-2 hide-scrollbar">
+            <label class="cursor-pointer shrink-0">
+              <input type="radio" name="loc" value="土農-本會直銷站" class="peer sr-only" checked>
+              <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 peer-checked:bg-amber-600 peer-checked:text-white text-slate-400 text-xs font-bold transition-colors">本會直銷站</div>
+            </label>
+            <label class="cursor-pointer shrink-0">
+              <input type="radio" name="loc" value="土農-清水" class="peer sr-only">
+              <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 peer-checked:bg-amber-600 peer-checked:text-white text-slate-400 text-xs font-bold transition-colors">清水</div>
+            </label>
+            <label class="cursor-pointer shrink-0">
+              <input type="radio" name="loc" value="土農-金城路小舖" class="peer sr-only">
+              <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 peer-checked:bg-amber-600 peer-checked:text-white text-slate-400 text-xs font-bold transition-colors">金城路小舖</div>
+            </label>
+            <label class="cursor-pointer shrink-0">
+              <input type="radio" name="loc" value="土農-永豐" class="peer sr-only">
+              <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 peer-checked:bg-amber-600 peer-checked:text-white text-slate-400 text-xs font-bold transition-colors">永豐</div>
+            </label>
+            <label class="cursor-pointer shrink-0">
+              <input type="radio" name="loc" value="其他" class="peer sr-only">
+              <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 peer-checked:bg-amber-600 peer-checked:text-white text-slate-400 text-xs font-bold transition-colors">其他</div>
+            </label>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">客戶姓名</label>
+            <input type="text" id="manualName" placeholder="例如: 王大明" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-amber-500">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">特殊備註 (列印時自動加上【】)</label>
+            <input type="text" id="manualNote" placeholder="例如: 預留款" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-amber-500">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mb-4">
+          <div class="bg-slate-900 border border-slate-700 rounded-xl p-2.5 flex flex-col items-center">
+            <span class="text-xs text-slate-400 mb-1.5">大瓶數量</span>
+            <div class="flex items-center gap-3">
+              <button onclick="changeQty('large', -1)" class="w-7 h-7 rounded-full bg-slate-700 text-white flex items-center justify-center">-</button>
+              <span id="qtyLarge" class="text-lg font-bold text-white w-6 text-center">0</span>
+              <button onclick="changeQty('large', 1)" class="w-7 h-7 rounded-full bg-slate-700 text-white flex items-center justify-center">+</button>
+            </div>
+          </div>
+          <div class="bg-slate-900 border border-slate-700 rounded-xl p-2.5 flex flex-col items-center">
+            <span class="text-xs text-slate-400 mb-1.5">中瓶數量</span>
+            <div class="flex items-center gap-3">
+              <button onclick="changeQty('medium', -1)" class="w-7 h-7 rounded-full bg-slate-700 text-white flex items-center justify-center">-</button>
+              <span id="qtyMedium" class="text-lg font-bold text-white w-6 text-center">0</span>
+              <button onclick="changeQty('medium', 1)" class="w-7 h-7 rounded-full bg-slate-700 text-white flex items-center justify-center">+</button>
+            </div>
+          </div>
+        </div>
+
+        <button onclick="addManualOrder()" class="w-full py-2.5 bg-amber-600 hover:bg-amber-500 rounded-xl text-white font-bold text-xs flex justify-center items-center gap-1.5">
+          + 加入列印清單
+        </button>
+      </div>
+
+      <!-- 3. 便貼列表清單 (依站點彙整) -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-slate-700">
+        <div class="flex justify-between items-center mb-3 border-b border-slate-700 pb-2">
+          <h2 class="text-sm font-semibold text-white">智慧待印清單與站點總計</h2>
+          <button onclick="clearQueue()" class="text-xs text-rose-400 py-1 px-2.5 bg-rose-500/10 rounded-lg">清空全部</button>
+        </div>
+        
+        <div id="queueListGrouped" class="space-y-4">
+          <div class="text-center text-slate-500 text-xs py-8">尚無資料，請匯入或新增</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 分頁二：字體設定與預覽 ==================== -->
+    <section id="tab-2" class="space-y-4 hidden">
+      
+      <!-- A. 便貼排版設定 -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-slate-700 space-y-3">
+        <h2 class="text-sm font-semibold text-amber-400 border-b border-slate-700 pb-2">
+          [商品便貼] 文字樣式設定
+        </h2>
+        <div class="space-y-2 text-xs">
+          <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-700 flex justify-between">
+            <span class="text-slate-300">行1: 站點/日期</span>
+            <div class="flex gap-2">
+              <select id="sSize1" onchange="renderPreviews()" class="bg-slate-700 text-white rounded outline-none"><option value="1" selected>LV 1</option><option value="2">LV 2</option><option value="3">LV 3</option></select>
+              <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="sBold1" onchange="renderPreviews()" class="accent-amber-500">粗</label>
+            </div>
+          </div>
+          <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-700 flex justify-between">
+            <span class="text-slate-300">行2: 姓名</span>
+            <div class="flex gap-2">
+              <select id="sSize2" onchange="renderPreviews()" class="bg-slate-700 text-white rounded outline-none"><option value="1">LV 1</option><option value="2">LV 2</option><option value="3" selected>LV 3</option></select>
+              <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="sBold2" onchange="renderPreviews()" checked class="accent-amber-500">粗</label>
+            </div>
+          </div>
+          <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-700 flex justify-between">
+            <span class="text-slate-300">行3: 數量明細</span>
+            <div class="flex gap-2">
+              <select id="sSize3" onchange="renderPreviews()" class="bg-slate-700 text-white rounded outline-none"><option value="1" selected>LV 1</option><option value="2">LV 2</option><option value="3">LV 3</option></select>
+              <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="sBold3" onchange="renderPreviews()" checked class="accent-amber-500">粗</label>
+            </div>
+          </div>
+          <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-700 flex justify-between">
+            <span class="text-slate-300">行4: 備註</span>
+            <div class="flex gap-2">
+              <select id="sSize4" onchange="renderPreviews()" class="bg-slate-700 text-white rounded outline-none"><option value="1" selected>LV 1</option><option value="2">LV 2</option><option value="3">LV 3</option></select>
+              <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="sBold4" onchange="renderPreviews()" checked class="accent-amber-500">粗</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-3 shadow-inner mt-2 flex flex-col items-center">
+          <p class="text-[10px] text-slate-400 mb-1 uppercase font-bold ui-sans">便貼預覽</p>
+          <canvas id="previewCanvasSticker" class="bg-slate-50 w-full"></canvas>
+        </div>
+      </div>
+
+      <!-- B. 出貨簽收單排版設定 -->
+      <div class="bg-slate-800 rounded-2xl p-4 shadow-lg border border-slate-700 space-y-3">
+        <h2 class="text-sm font-semibold text-emerald-400 border-b border-slate-700 pb-2">
+          [站點簽收單] 文字樣式設定
+        </h2>
+        <div class="space-y-2 text-xs">
+          
+          <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-700 flex justify-between">
+            <span class="text-slate-300">簽收單標題</span>
+            <div class="flex gap-2">
+              <select id="rSizeTitle" onchange="renderPreviews()" class="bg-slate-700 text-white rounded outline-none"><option value="1" selected>LV 1</option><option value="2">LV 2</option><option value="3">LV 3</option></select>
+              <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="rBoldTitle" onchange="renderPreviews()" checked class="accent-emerald-500">粗</label>
+            </div>
+          </div>
+
+          <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-700 flex justify-between items-center">
+            <span class="text-slate-300">瓶數總計數值</span>
+            <select id="rSizeTotal" onchange="renderPreviews()" class="bg-slate-700 text-white rounded outline-none p-1">
+              <option value="1">LV 1 (28px)</option>
+              <option value="2">LV 2 (56px)</option>
+              <option value="3" selected>LV 3 (84px)</option>
+            </select>
+          </div>
+
+          <!-- 精準對齊：間距調整 -->
+          <div class="bg-slate-900 p-3 rounded-xl border border-slate-700 space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="text-slate-300">明細：姓名與規格之間距</span>
+              <span id="lblPad" class="text-emerald-400 font-bold">14</span>
+            </div>
+            <input type="range" id="rNamePad" min="8" max="24" value="14" oninput="document.getElementById('lblPad').innerText=this.value; renderPreviews();" class="w-full accent-emerald-500">
+            <p class="text-[10px] text-slate-500 leading-tight">調整此數值，系統會自動計算中文字與半形字的差異填補空白字元，讓數量規格對齊一直線。</p>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-3 shadow-inner mt-2 flex flex-col items-center">
+          <p class="text-[10px] text-slate-400 mb-1 uppercase font-bold ui-sans">簽收單預覽 (擷取片段)</p>
+          <canvas id="previewCanvasReceipt" class="bg-slate-50 w-full"></canvas>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==================== 分頁三：藍牙通訊 ==================== -->
+    <section id="tab-3" class="space-y-4 hidden">
+      <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-lg flex flex-col gap-3">
+        <h2 class="text-sm font-semibold text-slate-300">Xprinter 藍牙連線控制台</h2>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <button onclick="connectPrinter('Printer001')" class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white shadow-md active:scale-95">
+            快速配對 (Printer001)
+          </button>
+          <button onclick="connectPrinter('Manual')" class="w-full py-4 bg-sky-600 hover:bg-sky-500 rounded-xl text-xs font-bold text-white shadow-md active:scale-95">
+            手動搜尋藍牙
+          </button>
+        </div>
+        <button onclick="disconnectPrinter()" class="w-full py-2 bg-slate-700/50 hover:bg-slate-700 border border-slate-600 rounded-xl text-xs text-rose-300 mt-1">中斷連線</button>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-lg flex flex-col h-64">
+        <h2 class="text-xs font-semibold text-slate-300 mb-2 border-b border-slate-700 pb-2">連線通訊紀錄 (Console Log)</h2>
+        <div id="logConsole" class="flex-1 overflow-y-auto text-[10px] font-mono space-y-1 text-slate-400"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 底部固定切換欄 -->
+  <nav class="fixed bottom-0 w-full bg-slate-800/95 backdrop-blur border-t border-slate-700 pb-safe pt-2 px-2 flex justify-around items-center z-50 h-[70px] ui-sans">
+    <button onclick="switchTab(1, '作業與列表')" id="navBtn1" class="flex flex-col items-center p-2 text-amber-500 w-1/3">
+      <span class="text-[12px] font-bold">作業列表</span>
+    </button>
+    <button onclick="switchTab(2, '字體設定與預覽')" id="navBtn2" class="flex flex-col items-center p-2 text-slate-400 w-1/3">
+      <span class="text-[12px] font-bold">設定預覽</span>
+    </button>
+    <button onclick="switchTab(3, '印表機連線')" id="navBtn3" class="flex flex-col items-center p-2 text-slate-400 w-1/3">
+      <span class="text-[12px] font-bold">連線機台</span>
+    </button>
+  </nav>
+
+  <!-- ==================== 彈跳視窗 Modal (站點簽收單設定) ==================== -->
+  <div id="receiptModal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] hidden flex items-center justify-center p-4 ui-sans">
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col">
+      <div class="bg-emerald-600 p-3 flex justify-between items-center">
+        <h3 class="text-white font-bold text-sm tracking-wide">設定出貨簽收單</h3>
+        <button onclick="closeReceiptModal()" class="text-emerald-200 hover:text-white">✕</button>
+      </div>
+      <div class="p-5 space-y-4">
+        <!-- 顯示站點摘要 -->
+        <div class="bg-slate-900 rounded-xl p-3 border border-slate-700">
+          <p class="text-xs text-slate-400 mb-1">準備列印站點：<span id="modalLoc" class="text-white font-bold"></span></p>
+          <p class="text-emerald-400 font-bold text-sm" id="modalTotals"></p>
+        </div>
+        
+        <!-- 設定出貨日期 (會自動附加星期幾) -->
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">請設定單據【出貨日期】</label>
+          <input type="date" id="modalDate" onchange="updateModalDay()" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none">
+          <p id="modalDayStr" class="text-amber-400 text-xs mt-1 font-bold ml-1"></p>
+        </div>
+      </div>
+      <div class="p-3 border-t border-slate-700 flex gap-3">
+        <button onclick="closeReceiptModal()" class="flex-1 py-2 bg-slate-700 rounded-xl text-white text-xs font-bold">取消</button>
+        <button onclick="printStationReceiptNative()" class="flex-1 py-2 bg-emerald-600 rounded-xl text-white text-xs font-bold active:scale-95">🖨️ 列印簽收單</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========================================================
+    // Firebase & Google Sheets 設定
+    // ========================================================
+    const firebaseConfig_xptre = {
+      apiKey: "AIzaSyB6D9vh6J2mdnjz2VXEVe99oi7oLF-irFo",
+      authDomain: "crm-ts-1225-001.firebaseapp.com",
+      databaseURL: "https://crm-ts-1225-001-default-rtdb.firebaseio.com",
+      projectId: "crm-ts-1225-001",
+      storageBucket: "crm-ts-1225-001.firebasestorage.app",
+      messagingSenderId: "925760221722",
+      appId: "1:925760221722:web:1aeda0b82f1f16b8dcd7a3"
+    };
+    firebase.initializeApp(firebaseConfig_xptre, "App_xptre");
+    const db_xptre = firebase.app("App_xptre").database();
+
+    const GAS_WEB_APP_URL = ""; // 填入你的 Apps Script 網址
+
+    function syncToGoogleSheet_hsty_hd(order) {
+      if (!GAS_WEB_APP_URL) return;
+      fetch(GAS_WEB_APP_URL, {
+        method: "POST", mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sheetName: "hsty_hd", ...order })
+      }).catch(err => console.log(err));
+    }
+
+    // ========================================================
+    // 資料管理與 UI 邏輯
+    // ========================================================
+    let orderQueue = [];
+    let currentReceiptLoc = ''; 
+
+    function switchTab(tabNum, label) {
+      [1, 2, 3].forEach(n => {
+        document.getElementById(`tab-${n}`).classList.add('hidden');
+        document.getElementById(`navBtn${n}`).classList.replace('text-amber-500', 'text-slate-400');
+      });
+      document.getElementById(`tab-${tabNum}`).classList.remove('hidden');
+      document.getElementById(`navBtn${tabNum}`).classList.replace('text-slate-400', 'text-amber-500');
+      document.getElementById('currentTabLabel').innerText = label;
+
+      if (tabNum === 2) renderPreviews();
+    }
+
+    function changeQty(type, amt) {
+      const el = document.getElementById(type === 'large' ? 'qtyLarge' : 'qtyMedium');
+      let val = parseInt(el.innerText) + amt;
+      el.innerText = val < 0 ? 0 : val;
+    }
+
+    function addManualOrder() {
+      const loc = document.querySelector('input[name="loc"]:checked')?.value || "其他";
+      const name = document.getElementById('manualName').value.trim() || '未填姓名';
+      const note = document.getElementById('manualNote').value.trim() || '';
+      const lQty = parseInt(document.getElementById('qtyLarge').innerText);
+      const mQty = parseInt(document.getElementById('qtyMedium').innerText);
+
+      if (lQty === 0 && mQty === 0) return alert('請至少指定 1 瓶！');
+
+      const dateStr = new Date().toISOString().split('T')[0];
+      const newOrder = { id: Date.now().toString(), loc, date: dateStr, name, lQty, mQty, note, selected: true };
+
+      orderQueue.push(newOrder);
+      db_xptre.ref('manual_orders_xptre/' + newOrder.id).set(newOrder);
+      syncToGoogleSheet_hsty_hd(newOrder);
+
+      document.getElementById('manualName').value = '';
+      document.getElementById('manualNote').value = '';
+      document.getElementById('qtyLarge').innerText = '0';
+      document.getElementById('qtyMedium').innerText = '0';
+
+      renderQueueList();
+      alert('已加入清單！');
+    }
+
+    async function fetchGoogleSheetGOTx() {
+      const url = document.getElementById('sheetUrl').value;
+      const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (!match) return alert('無效網址');
+      
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/gviz/tq?tqx=out:csv&sheet=GOTx`;
+      log('匯入 GOTx 中...');
+      try {
+        const res = await fetch(gvizUrl);
+        const rows = (await res.text()).split('\n').map(r => r.split(',').map(c => c.replace(/(^"|"$)/g, '').trim()));
+        let count = 0;
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (r.length < 3 || !r[2]) continue;
+          orderQueue.push({
+            id: Date.now().toString() + i,
+            loc: r[0] || '未定', date: r[1] || '', name: r[2],
+            lQty: parseInt(r[3]) || 0, mQty: parseInt(r[4]) || 0, note: r[5] || '', selected: true
+          });
+          count++;
+        }
+        renderQueueList();
+        log(`匯入成功 ${count} 筆`, 'success');
+        alert(`成功匯入 ${count} 筆`);
+      } catch (e) {
+        log(`匯入失敗: ${e.message}`, 'error');
+      }
+    }
+
+    // 渲染清單，自動計算總數與注入按鈕
+    function renderQueueList() {
+      const listEl = document.getElementById('queueListGrouped');
+      if (orderQueue.length === 0) {
+        listEl.innerHTML = '<div class="text-center text-slate-500 text-xs py-8">目前無資料，請匯入 GOTx 或手動輸入</div>';
+        return;
+      }
+
+      const grouped = orderQueue.reduce((acc, order) => {
+        if (!acc[order.loc]) acc[order.loc] = [];
+        acc[order.loc].push(order);
+        return acc;
+      }, {});
+
+      let html = '';
+      for (const [loc, orders] of Object.entries(grouped)) {
+        let sumL = 0, sumM = 0, selCount = 0;
+        orders.forEach(o => {
+          if (o.selected) { sumL += o.lQty; sumM += o.mQty; selCount++; }
+        });
+        const allSel = selCount === orders.length;
+
+        html += `
+          <div class="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden ui-sans">
+            <div class="bg-slate-700/80 px-3 py-2 flex flex-col gap-2">
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-bold text-white">${loc}</span>
+                <label class="flex items-center gap-1 cursor-pointer">
+                  <input type="checkbox" onchange="toggleGroupSelection('${loc}', this.checked)" ${allSel ? 'checked' : ''} class="w-4 h-4 accent-amber-500">
+                  <span class="text-[11px] text-slate-300">選取此站</span>
+                </label>
+              </div>
+              <div class="flex justify-between items-end border-t border-slate-600/50 pt-2">
+                <div class="text-[11px] text-amber-400 font-bold">
+                  選 ${selCount} 筆 | 總計: ${sumL}大瓶 + ${sumM}中瓶
+                </div>
+                <div class="flex gap-2">
+                  <button onclick="printGroupLabelsNative('${loc}')" class="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 rounded text-[11px] text-white font-bold active:scale-95 shadow">列印便貼</button>
+                  <button onclick="openReceiptModal('${loc}')" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-[11px] text-white font-bold active:scale-95 shadow">建立簽收單</button>
+                </div>
+              </div>
+            </div>
+            <div class="p-2 space-y-2">`;
+
+        orders.forEach(order => {
+          const qtyStr = [order.lQty > 0 ? `${order.lQty} 大瓶` : '', order.mQty > 0 ? `${order.mQty} 中瓶` : ''].filter(Boolean).join(' , ') || '0 瓶';
+          const noteHtml = order.note ? `<div class="text-[11px] text-amber-400 mt-1">備註: 【 ${order.note} 】</div>` : '';
+          
+          html += `
+            <label class="flex items-start gap-2.5 p-2 bg-slate-800/60 rounded-lg border border-slate-700 cursor-pointer hover:bg-slate-700/50">
+              <div class="pt-1"><input type="checkbox" onchange="toggleSingleOrder('${order.id}', this.checked)" ${order.selected ? 'checked' : ''} class="w-4 h-4 accent-amber-500"></div>
+              <div class="flex-1 font-[PMingLiU,serif]">
+                <div class="text-base text-white font-bold">${order.name}</div>
+                <div class="text-sm text-emerald-400">${qtyStr}</div>
+                ${noteHtml}
+              </div>
+              <button type="button" onclick="event.preventDefault(); removeSingleOrder('${order.id}')" class="text-rose-400 hover:text-rose-300 text-[11px] p-1">刪除</button>
+            </label>`;
+        });
+        html += `</div></div>`;
+      }
+      listEl.innerHTML = html;
+    }
+
+    function toggleGroupSelection(loc, isChecked) { orderQueue.forEach(o => { if (o.loc === loc) o.selected = isChecked; }); renderQueueList(); }
+    function toggleSingleOrder(id, isChecked) { const target = orderQueue.find(o => o.id === id); if (target) target.selected = isChecked; renderQueueList(); }
+    function removeSingleOrder(id) { orderQueue = orderQueue.filter(o => o.id !== id); renderQueueList(); }
+    function clearQueue() { if (confirm('確定清空所有名單？')) { orderQueue = []; renderQueueList(); } }
+
+    // ========================================================
+    // 字串長度補齊 (中文字佔2格, 英文數字佔1格)
+    // ========================================================
+    function padRight(str, totalLen) {
+      if(!str) str = '';
+      let blen = 0;
+      for (let i = 0; i < str.length; i++) {
+        blen += str.charCodeAt(i) > 255 ? 2 : 1; // 簡易判定雙位元字元
+      }
+      let padding = totalLen - blen;
+      if (padding > 0) return str + ' '.repeat(padding);
+      return str + ' '; // 保底至少一個空白
+    }
+
+    // ========================================================
+    // 預覽區 (強制明體字型)
+    // ========================================================
+    function renderPreviews() {
+      // 1. 便貼預覽
+      const cSticker = document.getElementById('previewCanvasSticker');
+      const ctx1 = cSticker.getContext('2d');
+      const pxMap = { 1: 28, 2: 56, 3: 84 };
+      
+      const s1 = pxMap[document.getElementById('sSize1').value];
+      const b1 = document.getElementById('sBold1').checked;
+      const s2 = pxMap[document.getElementById('sSize2').value];
+      const b2 = document.getElementById('sBold2').checked;
+      const s3 = pxMap[document.getElementById('sSize3').value];
+      const b3 = document.getElementById('sBold3').checked;
+      const s4 = pxMap[document.getElementById('sSize4').value];
+      const b4 = document.getElementById('sBold4').checked;
+
+      cSticker.width = 384;
+      cSticker.height = 30 + s1 + 10 + s2 + 10 + s3 + 10 + s4 + 30;
+
+      ctx1.fillStyle = '#FFFFFF'; ctx1.fillRect(0, 0, cSticker.width, cSticker.height);
+      ctx1.fillStyle = '#000000'; ctx1.textAlign = 'center'; ctx1.textBaseline = 'top';
+
+      let y1 = 20;
+      ctx1.font = `${b1?'900':'400'} ${s1}px 'PMingLiU', 'MingLiU', serif`; ctx1.fillText("土農-本會 2026-10-05", 192, y1); y1 += s1 + 10;
+      ctx1.font = `${b2?'900':'400'} ${s2}px 'PMingLiU', 'MingLiU', serif`; ctx1.fillText("王大明", 192, y1); y1 += s2 + 10;
+      ctx1.font = `${b3?'900':'400'} ${s3}px 'PMingLiU', 'MingLiU', serif`; ctx1.fillText("2 大瓶 , 1 中瓶", 192, y1); y1 += s3 + 10;
+      ctx1.font = `${b4?'900':'400'} ${s4}px 'PMingLiU', 'MingLiU', serif`; ctx1.fillText("【 預留款 】", 192, y1);
+
+      // 2. 簽收單預覽
+      const cReceipt = document.getElementById('previewCanvasReceipt');
+      const ctx2 = cReceipt.getContext('2d');
+      
+      const rT_sz = pxMap[document.getElementById('rSizeTitle').value];
+      const rT_b = document.getElementById('rBoldTitle').checked;
+      const rTot_sz = pxMap[document.getElementById('rSizeTotal').value];
+      const padLen = parseInt(document.getElementById('rNamePad').value);
+
+      cReceipt.width = 384;
+      cReceipt.height = 400; // 預留空間示意
+      
+      ctx2.fillStyle = '#FFFFFF'; ctx2.fillRect(0, 0, cReceipt.width, cReceipt.height);
+      ctx2.fillStyle = '#000000'; ctx2.textBaseline = 'top';
+
+      let y2 = 20;
+      ctx2.textAlign = 'center';
+      ctx2.font = `${rT_b?'900':'400'} ${rT_sz}px 'PMingLiU', 'MingLiU', serif`; 
+      ctx2.fillText("五寮尖山羊乳 出貨簽收單", 192, y2); y2 += rT_sz + 15;
+      
+      ctx2.textAlign = 'left';
+      ctx2.font = `400 28px 'PMingLiU', 'MingLiU', serif`; 
+      ctx2.fillText("站點：土農-本會", 10, y2); y2 += 35;
+      ctx2.fillText("共計：", 10, y2); y2 += 35;
+      
+      ctx2.font = `900 ${rTot_sz}px 'PMingLiU', 'MingLiU', serif`; 
+      ctx2.fillText("大瓶 2", 10, y2); y2 += rTot_sz + 10;
+      ctx2.fillText("中瓶 1", 10, y2); y2 += rTot_sz + 20;
+
+      ctx2.font = `900 28px 'PMingLiU', 'MingLiU', serif`; 
+      // 這裡示範 Padding 機制
+      let headerStr = padRight("客戶姓名", padLen) + "規格";
+      ctx2.fillText(headerStr, 10, y2); y2 += 35;
+
+      ctx2.font = `400 28px 'PMingLiU', 'MingLiU', serif`; 
+      let itemStr = padRight("王大明", padLen) + "2大,1中";
+      ctx2.fillText(itemStr, 10, y2); y2 += 35;
+    }
+
+    // ========================================================
+    // Modal (彈跳視窗 - 簽收單)
+    // ========================================================
+    function openReceiptModal(loc) {
+      currentReceiptLoc = loc;
+      let sumL = 0, sumM = 0, count = 0;
+      orderQueue.forEach(o => {
+        if(o.loc === loc && o.selected) { sumL += o.lQty; sumM += o.mQty; count++; }
+      });
+      
+      document.getElementById('modalLoc').innerText = loc;
+      document.getElementById('modalTotals').innerText = `選取 ${count} 筆 | 總計: ${sumL}大瓶, ${sumM}中瓶`;
+      
+      // 預設日期為明天
+      const tmrw = new Date();
+      tmrw.setDate(tmrw.getDate() + 1);
+      document.getElementById('modalDate').value = tmrw.toISOString().split('T')[0];
+      updateModalDay();
+
+      document.getElementById('receiptModal').classList.remove('hidden');
+    }
+
+    function closeReceiptModal() { document.getElementById('receiptModal').classList.add('hidden'); }
+
+    function updateModalDay() {
+      const dateVal = document.getElementById('modalDate').value;
+      if(dateVal) {
+        const d = new Date(dateVal);
+        const days = ['日','一','二','三','四','五','六'];
+        document.getElementById('modalDayStr').innerText = `(星期${days[d.getDay()]})`;
+      }
+    }
+
+    // ========================================================
+    // Xprinter ESC/POS 通訊與列印核心
+    // ========================================================
+    let bluetoothDevice = null;
+    let printerCharacteristic = null;
+
+    function log(msg, type='info') {
+      const consoleEl = document.getElementById('logConsole');
+      const time = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+      let color = type==='error' ? 'text-rose-400' : (type==='success' ? 'text-emerald-400' : 'text-slate-400');
+      consoleEl.innerHTML = `<div class="${color}">[${time}] ${msg}</div>` + consoleEl.innerHTML;
+    }
+
+    async function connectPrinter(mode) {
+      if (!navigator.bluetooth) return alert("請使用 Bluefy App (iOS) 或支援 Web Bluetooth 的瀏覽器！");
+      try {
+        let opt = { optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', '49535343-fe7d-4ae5-8fa9-9fafd205e455'] };
+        if (mode === 'Printer001') opt.filters = [{ namePrefix: 'Printer' }, { namePrefix: 'XP' }];
+        else opt.acceptAllDevices = true;
+
+        bluetoothDevice = await navigator.bluetooth.requestDevice(opt);
+        bluetoothDevice.addEventListener('gattserverdisconnected', () => {
+          document.getElementById('connStatus').innerHTML = '<span class="px-2 py-1 rounded-full text-[10px] bg-rose-500/20 text-rose-400">已斷線</span>';
+          log('藍牙已斷線', 'error');
+        });
+
+        const server = await bluetoothDevice.gatt.connect();
+        const services = await server.getPrimaryServices();
+        for (let s of services) {
+          try {
+            const chars = await s.getCharacteristics();
+            for (let c of chars) {
+              if (c.properties.write || c.properties.writeWithoutResponse) {
+                printerCharacteristic = c;
+                document.getElementById('connStatus').innerHTML = '<span class="px-2 py-1 rounded-full text-[10px] bg-emerald-500/20 text-emerald-400">已連線</span>';
+                log('✅ 機台通訊已建立', 'success'); return;
+              }
+            }
+          } catch(e) {}
+        }
+      } catch(e) { log(`連線失敗: ${e.message}`, 'error'); }
+    }
+    
+    function disconnectPrinter() { if(bluetoothDevice) bluetoothDevice.gatt.disconnect(); }
+
+    function encodeCP936(text) {
+      if (typeof cptable === 'undefined') return new Uint8Array();
+      return new Uint8Array(cptable.utils.encode(936, text));
+    }
+    function getSizeCmd(level) {
+      const n = Math.max(0, parseInt(level) - 1);
+      return (n << 4) | n; // ex: lv1->0, lv2->0x11, lv3->0x22
+    }
+    function buildTextLineCmd(text, sizeLevel, isBold) {
+      let cmd = [0x1B, 0x45, isBold ? 1 : 0, 0x1D, 0x21, getSizeCmd(sizeLevel)];
+      encodeCP936(text).forEach(b => cmd.push(b));
+      cmd.push(0x0A, 0x1B, 0x4A, sizeLevel > 2 ? 40 : 20, 0x1D, 0x21, 0x00);
+      return cmd;
+    }
+
+    async function sendDataToPrinter(payloadArray) {
+      if (!printerCharacteristic) { alert("請先連線印表機！"); return false; }
+      const data = new Uint8Array(payloadArray);
+      let offset = 0;
+      try {
+        while (offset < data.length) {
+          const chunk = data.slice(offset, offset + 60);
+          if (printerCharacteristic.properties.writeWithoutResponse) await printerCharacteristic.writeValueWithoutResponse(chunk);
+          else await printerCharacteristic.writeValue(chunk);
+          offset += 60;
+          await new Promise(r => setTimeout(r, 20)); 
+        }
+        log('✅ 列印指令發送成功', 'success');
+        return true;
+      } catch(e) { log(`發送失敗: ${e.message}`, 'error'); return false; }
+    }
+
+    // ========================================================
+    // 列印功能：A1便貼 & 出貨單 (全原生指令)
+    // ========================================================
+    async function printGroupLabelsNative(loc) {
+      const toPrint = orderQueue.filter(o => o.loc === loc && o.selected);
+      if(toPrint.length === 0) return alert("該站無勾選資料");
+
+      const lv1 = document.getElementById('sSize1').value;
+      const b1 = document.getElementById('sBold1').checked;
+      const lv2 = document.getElementById('sSize2').value;
+      const b2 = document.getElementById('sBold2').checked;
+      const lv3 = document.getElementById('sSize3').value;
+      const b3 = document.getElementById('sBold3').checked;
+      const lv4 = document.getElementById('sSize4').value;
+      const b4 = document.getElementById('sBold4').checked;
+
+      let payload = [0x1B, 0x40, 0x1C, 0x26, 0x1B, 0x33, 70]; 
+      log(`印製便貼: ${loc} 共 ${toPrint.length} 張...`);
+
+      for (let o of toPrint) {
+        payload.push(0x1B, 0x61, 0x01); // 置中
+        payload.push(...buildTextLineCmd(`${o.loc} ${o.date}`, lv1, b1));
+        payload.push(...buildTextLineCmd(o.name, lv2, b2));
+        const qtyStr = [o.lQty > 0 ? `${o.lQty} 大瓶` : '', o.mQty > 0 ? `${o.mQty} 中瓶` : ''].filter(Boolean).join(' , ') || '0 瓶';
+        payload.push(...buildTextLineCmd(qtyStr, lv3, b3));
+        if (o.note) payload.push(...buildTextLineCmd(`【 ${o.note} 】`, lv4, b4));
+        payload.push(0x0A, 0x0A, 0x1D, 0x56, 0x42, 0x00); // 裁紙
+      }
+
+      await sendDataToPrinter(payload);
+    }
+
+    async function printStationReceiptNative() {
+      const toPrint = orderQueue.filter(o => o.loc === currentReceiptLoc && o.selected);
+      if(toPrint.length === 0) return alert("無選取客戶，無法印單");
+
+      // 取得簽收單樣式設定
+      const rT_sz = document.getElementById('rSizeTitle').value;
+      const rT_b = document.getElementById('rBoldTitle').checked;
+      const rTot_sz = document.getElementById('rSizeTotal').value;
+      const padLen = parseInt(document.getElementById('rNamePad').value);
+
+      const dateStr = document.getElementById('modalDate').value;
+      const dayStr = document.getElementById('modalDayStr').innerText;
+      const fullDate = `${dateStr} ${dayStr}`;
+
+      let sumL = 0, sumM = 0;
+      toPrint.forEach(o => { sumL += o.lQty; sumM += o.mQty; });
+
+      log(`印製簽收單: ${currentReceiptLoc}...`);
+      let payload = [0x1B, 0x40, 0x1C, 0x26, 0x1B, 0x33, 80]; 
+
+      // 抬頭 (依設定，預設 Lv1 粗)
+      payload.push(0x1B, 0x61, 0x01); // 置中
+      payload.push(...buildTextLineCmd("五寮尖山羊乳 出貨簽收單", rT_sz, rT_b));
+      
+      // 資訊 (Lv 1)
+      payload.push(0x1B, 0x61, 0x00); // 靠左
+      payload.push(...buildTextLineCmd(`站點：${currentReceiptLoc}`, 1, false));
+      payload.push(...buildTextLineCmd(`出貨日期：${fullDate}`, 1, false));
+      
+      // 共計與大中小數目分行顯示 (依需求：共計Lv1, 瓶數依設定預設Lv3)
+      payload.push(...buildTextLineCmd("共計：", 1, false));
+      if (sumL > 0) payload.push(...buildTextLineCmd(`大瓶 ${sumL}`, rTot_sz, true));
+      if (sumM > 0) payload.push(...buildTextLineCmd(`中瓶 ${sumM}`, rTot_sz, true));
+      
+      payload.push(...buildTextLineCmd("--------------------------------", 1, false));
+      
+      // 標頭 (使用 padding 對齊)
+      let headerStr = padRight("客戶姓名", padLen) + "規格";
+      payload.push(...buildTextLineCmd(headerStr, 1, true));
+      
+      // 明細
+      for (let o of toPrint) {
+        let q = [o.lQty>0?`${o.lQty}大`:'', o.mQty>0?`${o.mQty}中`:''].filter(Boolean).join(',');
+        let note = o.note ? ` (${o.note})` : '';
+        let itemStr = padRight(o.name, padLen) + `${q}${note}`;
+        payload.push(...buildTextLineCmd(itemStr, 1, false));
+      }
+
+      payload.push(...buildTextLineCmd("--------------------------------", 1, false));
+      payload.push(...buildTextLineCmd("點收人(簽章)：", 2, true));
+      payload.push(0x0A, 0x0A, 0x0A, 0x0A, 0x0A); // 留白供簽名
+      payload.push(0x1D, 0x56, 0x42, 0x00); // 裁紙
+
+      if (await sendDataToPrinter(payload)) {
+        closeReceiptModal();
+      }
+    }
+
+    // 初始化頁面預覽
+    window.onload = () => { renderPreviews(); }
+  </script>
+</body>
+</html>
