@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>五寮尖山羊乳 - 原生高速列印工作台 v8.1</title>
+  <title>五寮尖山羊乳 - 原生高速列印工作台 v8.2</title>
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -75,30 +75,11 @@
           手動登入資訊 (同步 _xptre 與 hsty_hd)
         </h2>
 
-        <!-- 取貨站點 -->
+        <!-- 取貨站點 (動態產生，與試算表資料同步) -->
         <div class="mb-4">
-          <label class="block text-xs text-slate-400 mb-2">取貨站點</label>
-          <div class="flex overflow-x-auto gap-2 pb-2 hide-scrollbar">
-            <label class="cursor-pointer shrink-0">
-              <input type="radio" name="loc" value="土農-本會直銷站" class="peer sr-only" checked>
-              <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 peer-checked:bg-amber-600 peer-checked:text-white text-slate-400 text-xs font-bold transition-colors">本會直銷站</div>
-            </label>
-            <label class="cursor-pointer shrink-0">
-              <input type="radio" name="loc" value="土農-清水" class="peer sr-only">
-              <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 peer-checked:bg-amber-600 peer-checked:text-white text-slate-400 text-xs font-bold transition-colors">清水</div>
-            </label>
-            <label class="cursor-pointer shrink-0">
-              <input type="radio" name="loc" value="土農-金城路小舖" class="peer sr-only">
-              <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 peer-checked:bg-amber-600 peer-checked:text-white text-slate-400 text-xs font-bold transition-colors">金城路小舖</div>
-            </label>
-            <label class="cursor-pointer shrink-0">
-              <input type="radio" name="loc" value="土農-永豐" class="peer sr-only">
-              <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 peer-checked:bg-amber-600 peer-checked:text-white text-slate-400 text-xs font-bold transition-colors">永豐</div>
-            </label>
-            <label class="cursor-pointer shrink-0">
-              <input type="radio" name="loc" value="其他" class="peer sr-only">
-              <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 peer-checked:bg-amber-600 peer-checked:text-white text-slate-400 text-xs font-bold transition-colors">其他</div>
-            </label>
+          <label class="block text-xs text-slate-400 mb-2">取貨站點 (自動同步試算表名稱)</label>
+          <div id="manualLocContainer" class="flex overflow-x-auto gap-2 pb-2 hide-scrollbar">
+            <!-- 這裡的按鈕會由 JS 動態生成，確保與 Google Sheet 名稱 100% 一致 -->
           </div>
         </div>
 
@@ -334,6 +315,9 @@
     let orderQueue = [];
     let currentReceiptLoc = ''; 
 
+    // 預設常見站點清單
+    const defaultLocs = ['土農-本會直銷站', '土農-清水', '土農-金城路小舖', '土農-永豐', '其他'];
+
     function switchTab(tabNum, label) {
       [1, 2, 3].forEach(n => {
         document.getElementById(`tab-${n}`).classList.add('hidden');
@@ -350,6 +334,30 @@
       const el = document.getElementById(type === 'large' ? 'qtyLarge' : 'qtyMedium');
       let val = parseInt(el.innerText) + amt;
       el.innerText = val < 0 ? 0 : val;
+    }
+
+    // [新增] 動態更新手動新增區塊的站點按鈕
+    function updateManualLocRadios() {
+      const container = document.getElementById('manualLocContainer');
+      if (!container) return;
+      
+      // 收集所有出現過的地點 (試算表 + 手動) 並去重複
+      let activeLocs = [...new Set([...defaultLocs, ...orderQueue.map(o => o.loc)])];
+      
+      // 記住目前選取的項目
+      const currentChecked = document.querySelector('input[name="loc"]:checked')?.value || activeLocs[0];
+
+      let html = '';
+      activeLocs.forEach(loc => {
+        const isChecked = (loc === currentChecked) ? 'checked' : '';
+        html += `
+          <label class="cursor-pointer shrink-0">
+            <input type="radio" name="loc" value="${loc}" class="peer sr-only" ${isChecked}>
+            <div class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 peer-checked:bg-amber-600 peer-checked:text-white text-slate-400 text-xs font-bold transition-colors">${loc}</div>
+          </label>
+        `;
+      });
+      container.innerHTML = html;
     }
 
     function addManualOrder() {
@@ -373,6 +381,7 @@
       document.getElementById('qtyLarge').innerText = '0';
       document.getElementById('qtyMedium').innerText = '0';
 
+      updateManualLocRadios();
       renderQueueList();
       alert('已加入清單！');
     }
@@ -398,6 +407,7 @@
           });
           count++;
         }
+        updateManualLocRadios(); // 匯入後同步按鈕
         renderQueueList();
         log(`匯入成功 ${count} 筆`, 'success');
         alert(`成功匯入 ${count} 筆`);
@@ -472,8 +482,8 @@
 
     function toggleGroupSelection(loc, isChecked) { orderQueue.forEach(o => { if (o.loc === loc) o.selected = isChecked; }); renderQueueList(); }
     function toggleSingleOrder(id, isChecked) { const target = orderQueue.find(o => o.id === id); if (target) target.selected = isChecked; renderQueueList(); }
-    function removeSingleOrder(id) { orderQueue = orderQueue.filter(o => o.id !== id); renderQueueList(); }
-    function clearQueue() { if (confirm('確定清空所有名單？')) { orderQueue = []; renderQueueList(); } }
+    function removeSingleOrder(id) { orderQueue = orderQueue.filter(o => o.id !== id); updateManualLocRadios(); renderQueueList(); }
+    function clearQueue() { if (confirm('確定清空所有名單？')) { orderQueue = []; updateManualLocRadios(); renderQueueList(); } }
 
     // ========================================================
     // 字串長度補齊 (中文字佔2格, 英文數字佔1格)
@@ -482,11 +492,11 @@
       if(!str) str = '';
       let blen = 0;
       for (let i = 0; i < str.length; i++) {
-        blen += str.charCodeAt(i) > 255 ? 2 : 1; // 簡易判定雙位元字元
+        blen += str.charCodeAt(i) > 255 ? 2 : 1; 
       }
       let padding = totalLen - blen;
       if (padding > 0) return str + ' '.repeat(padding);
-      return str + ' '; // 保底至少一個空白
+      return str + ' '; 
     }
 
     // ========================================================
@@ -529,7 +539,7 @@
       const padLen = parseInt(document.getElementById('rNamePad').value);
 
       cReceipt.width = 384;
-      cReceipt.height = 400; // 預留空間示意
+      cReceipt.height = 420; // 預留空間示意
       
       ctx2.fillStyle = '#FFFFFF'; ctx2.fillRect(0, 0, cReceipt.width, cReceipt.height);
       ctx2.fillStyle = '#000000'; ctx2.textBaseline = 'top';
@@ -542,6 +552,7 @@
       ctx2.textAlign = 'left';
       ctx2.font = `400 28px 'PMingLiU', 'MingLiU', serif`; 
       ctx2.fillText("站點：土農-本會", 10, y2); y2 += 35;
+      ctx2.fillText("出貨日期：2026-10-06 (星期二)", 10, y2); y2 += 35;
       ctx2.fillText("共計：", 10, y2); y2 += 35;
       
       ctx2.font = `900 ${rTot_sz}px 'PMingLiU', 'MingLiU', serif`; 
@@ -720,16 +731,16 @@
       log(`印製簽收單: ${currentReceiptLoc}...`);
       let payload = [0x1B, 0x40, 0x1C, 0x26, 0x1B, 0x33, 80]; 
 
-      // 抬頭 (依設定，預設 Lv1 粗)
-      payload.push(0x1B, 0x61, 0x01); // 置中
+      // 抬頭 (依設定置中)
+      payload.push(0x1B, 0x61, 0x01); 
       payload.push(...buildTextLineCmd("五寮尖山羊乳 出貨簽收單", rT_sz, rT_b));
       
-      // 資訊 (Lv 1)
-      payload.push(0x1B, 0x61, 0x00); // 靠左
+      // 資訊 (Lv 1, 靠左)
+      payload.push(0x1B, 0x61, 0x00); 
       payload.push(...buildTextLineCmd(`站點：${currentReceiptLoc}`, 1, false));
       payload.push(...buildTextLineCmd(`出貨日期：${fullDate}`, 1, false));
       
-      // 共計與大中小數目分行顯示 (依需求：共計Lv1, 瓶數依設定預設Lv3)
+      // 共計與大中小數目分行顯示
       payload.push(...buildTextLineCmd("共計：", 1, false));
       if (sumL > 0) payload.push(...buildTextLineCmd(`大瓶 ${sumL}`, rTot_sz, true));
       if (sumM > 0) payload.push(...buildTextLineCmd(`中瓶 ${sumM}`, rTot_sz, true));
@@ -758,8 +769,11 @@
       }
     }
 
-    // 初始化頁面預覽
-    window.onload = () => { renderPreviews(); }
+    // 初始化頁面預覽與按鈕
+    window.onload = () => { 
+      updateManualLocRadios();
+      renderPreviews(); 
+    }
   </script>
 </body>
 </html>
